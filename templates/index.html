@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>City Monitor Agent Demo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            background: rgba(74, 144, 226, 0.1);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(74, 144, 226, 0.2);
+        }
+
+        .header h1 {
+            color: #4a90e2;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .status {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .conversation-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        .avatar-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .avatar {
+            width: 200px;
+            height: 250px;
+            object-fit: cover;
+            border: 4px solid #4a90e2;
+            box-shadow: 0 8px 20px rgba(74, 144, 226, 0.3);
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .avatar.speaking {
+            box-shadow: 0 8px 25px rgba(46, 204, 113, 0.5);
+            border-color: #2ecc71;
+        }
+
+        .agent-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4a90e2;
+            margin-top: 15px;
+        }
+
+        .agent-title {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .wave-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 40px;
+            margin-top: 15px;
+        }
+
+        .wave-bar {
+            width: 4px;
+            height: 15px;
+            margin: 0 2px;
+            background-color: #4a90e2;
+            border-radius: 2px;
+            animation: wave 1.2s infinite ease-in-out;
+            opacity: 0.6;
+        }
+
+        .wave-bar:nth-child(1) { animation-delay: 0.1s; }
+        .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+        .wave-bar:nth-child(4) { animation-delay: 0.4s; }
+        .wave-bar:nth-child(5) { animation-delay: 0.5s; }
+
+        @keyframes wave {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(2); }
+        }
+
+        .active-wave .wave-bar {
+            background-color: #2ecc71;
+            opacity: 1;
+        }
+
+        .conversation-messages {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .conversation-messages.active {
+            display: block;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            margin-left: auto;
+            text-align: right;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant {
+            background: #f1f8e9;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-role {
+            font-size: 12px;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .message-content {
+            font-size: 14px;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-top: 1px solid rgba(74, 144, 226, 0.2);
+        }
+
+        .btn {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            margin: 5px;
+            min-width: 120px;
+        }
+
+        .btn:hover {
+            background: #357abd;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn.danger {
+            background: #e74c3c;
+        }
+
+        .btn.danger:hover {
+            background: #c0392b;
+        }
+
+        .btn.success {
+            background: #2ecc71;
+        }
+
+        .btn.success:hover {
+            background: #27ae60;
+        }
+
+        .incident-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #e74c3c;
+        }
+
+        .incident-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .incident-type {
+            font-weight: bold;
+            color: #e74c3c;
+            font-size: 14px;
+        }
+
+        .priority {
+            background: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .incident-details {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .incident-address {
+            margin: 5px 0;
+            font-weight: 500;
+        }
+
+        .confidence {
+            color: #2ecc71;
+            font-weight: bold;
+        }
+
+        .incident-actions {
+            margin-top: 10px;
+        }
+
+        .audio-controls {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .audio-level {
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .audio-level-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #2ecc71, #f39c12, #e74c3c);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .device-select {
+            margin: 10px 0;
+        }
+
+        .device-select label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .device-select select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .status-dot.connected {
+            background: #2ecc71;
+        }
+
+        .status-dot.calling {
+            background: #f39c12;
+        }
+
+        .status-dot.error {
+            background: #e74c3c;
+        }
+
+        .function-calls {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e8f4fd;
+            border-radius: 6px;
+            font-size: 12px;
+            display: none;
+        }
+
+        .function-calls.active {
+            display: block;
+        }
+
+        .function-call {
+            margin: 5px 0;
+            padding: 5px;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #4a90e2;
+        }
+
+        .notifications {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .notification {
+            background: white;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-left: 4px solid #4a90e2;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+        }
+
+        .notification.success {
+            border-left-color: #2ecc71;
+        }
+
+        .notification.error {
+            border-left-color: #e74c3c;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .no-incidents {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 300px;
+            }
+            
+            .avatar {
+                width: 150px;
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h2 style="color: #4a90e2; margin-bottom: 20px; text-align: center;">
+                🚨 City Monitor
+            </h2>
+            
+            <div class="connection-status">
+                <div class="status-dot" id="connectionDot"></div>
+                <span id="connectionStatus">Connecting...</span>
+            </div>
+
+            <div class="audio-controls">
+                <h3 style="color: #333; margin-bottom: 10px; font-size: 16px;">Audio Settings</h3>
+                
+                <div class="device-select">
+                    <label for="inputDevice">Microphone:</label>
+                    <select id="inputDevice"></select>
+                </div>
+
+                <div class="audio-level">
+                    <div class="audio-level-bar" id="audioLevelBar"></div>
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                    Audio Level
+                </div>
+            </div>
+
+            <div style="margin: 20px 0;">
+                <button id="startCallBtn" class="btn success" style="width: 100%;">
+                    🎤 Start Demo Call
+                </button>
+                <button id="stopCallBtn" class="btn danger" style="width: 100%; display: none;">
+                    ⏹️ Stop Call
+                </button>
+            </div>
+
+            <div id="incidentsList">
+                <h3 style="color: #333; margin-bottom: 15px; font-size: 16px;">
+                    📋 Recent Incidents
+                </h3>
+                <div id="incidentsContainer">
+                    <div class="no-incidents">
+                        No active incidents
+                    </div>
+                </div>
+            </div>
+
+            <div class="function-calls" id="functionCalls">
+                <h4 style="color: #4a90e2; margin-bottom: 10px;">Function Calls</h4>
+                <div id="functionCallsList"></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="header">
+                <h1>Safe City Authority Emergency Response</h1>
+                <div class="status" id="systemStatus">System Ready</div>
+            </div>
+
+            <div class="conversation-area">
+                <div class="avatar-container">
+                    <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI1MCIgdmlld0JveD0iMCAwIDIwMCAyNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjUwIiBmaWxsPSJsaW5lYXItZ3JhZGllbnQoMTM1ZGVnLCAjZjBmMGYwIDAlLCAjZTBlMGUwIDEwMCUpIiByeD0iMTUiLz4KPGNpcmNsZSBjeD0iMTAwIiBjeT0iNzAiIHI9IjMwIiBmaWxsPSIjNGE5MGUyIi8+CjxwYXRoIGQ9Ik03MCA5MHMxNSAtNSAzMCAwIDMwIDAgMzAgMHY2MHMtMTUgNSAtMzAgMCAtMzAgMCAtMzAgMFY5MHoiIGZpbGw9IiM0YTkwZTIiLz4KPGNpcmNsZSBjeD0iODgiIGN5PSI2NSIgcj0iMyIgZmlsbD0id2hpdGUiLz4KPGNpcmNsZSBjeD0iMTEyIiBjeT0iNjUiIHI9IjMiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik05MiA3NXE4IDUgMTYgMCIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+Cjx0ZXh0IHg9IjEwMCIgeT0iMjIwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM0YTkwZTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtd2VpZ2h0PSJib2xkIj5TQVJBSDwvdGV4dD4KPC9zdmc+" 
+                         alt="Sarah Khanum" 
+                         class="avatar" 
+                         id="avatar">
+                    <div class="agent-name">Sarah Khanum</div>
+                    <div class="agent-title">Emergency Response Coordinator</div>
+                    
+                    <div class="wave-container" id="waveContainer">
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                    </div>
+                </div>
+
+                <div class="conversation-messages" id="conversationMessages">
+                    <div id="messagesList"></div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <div style="text-align: center;">
+                    <button id="testIncidentBtn" class="btn" style="margin-right: 10px;">
+                        📞 Create Test Incident
+                    </button>
+                    <button id="clearConversationBtn" class="btn" style="margin-left: 10px;">
+                        🗑️ Clear Conversation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notifications" id="notifications"></div>
+
+    <script>
+        const socket = io();
+        let currentSessionId = null;
+        let isCallActive = false;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let audioLevelInterval = null;
+
+        // DOM elements
+        const connectionDot = document.getElementById('connectionDot');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const systemStatus = document.getElementById('systemStatus');
+        const startCallBtn = document.getElementById('startCallBtn');
+        const stopCallBtn = document.getElementById('stopCallBtn');
+        const testIncidentBtn = document.getElementById('testIncidentBtn');
+        const clearConversationBtn = document.getElementById('clearConversationBtn');
+        const inputDevice = document.getElementById('inputDevice');
+        const audioLevelBar = document.getElementById('audioLevelBar');
+        const avatar = document.getElementById('avatar');
+        const waveContainer = document.getElementById('waveContainer');
+        const conversationMessages = document.getElementById('conversationMessages');
+        const messagesList = document.getElementById('messagesList');
+        const incidentsContainer = document.getElementById('incidentsContainer');
+        const functionCalls = document.getElementById('functionCalls');
+        const functionCallsList = document.getElementById('functionCallsList');
+        const notifications = document.getElementById('notifications');
+
+        // Audio setup
+        async function setupAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                // Populate device list
+                inputDevice.innerHTML = '';
+                const audioDevices = devices.filter(device => device.kind === 'audioinput');
+                audioDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Microphone ${inputDevice.length + 1}`;
+                    inputDevice.appendChild(option);
+                });
+
+                // Setup audio context for level monitoring
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                analyser.fftSize = 256;
+                startAudioLevelMonitoring();
+                
+                stream.getTracks().forEach(track => track.stop());
+                showNotification('Microphone access granted', 'success');
+                
+            } catch (error) {
+                console.error('Error setting up audio:', error);
+                showNotification('Failed to access microphone', 'error');
+            }
+        }
+
+        function startAudioLevelMonitoring() {
+            if (!analyser) return;
+            
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            
+            audioLevelInterval = setInterval(() => {
+                if (!isCallActive) {
+                    audioLevelBar.style.width = '0%';
+                    return;
+                }
+                
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
+                const percentage = (average / 255) * 100;
+                audioLevelBar.style.width = `${percentage}%`;
+            }, 100);
+        }
+
+        // Socket event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            connectionDot.className = 'status-dot connected';
+            connectionStatus.textContent = 'Connected';
+            systemStatus.textContent = 'System Ready';
+            showNotification('Connected to City Monitor Agent', 'success');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            connectionDot.className = 'status-dot error';
+            connectionStatus.textContent = 'Disconnected';
+            systemStatus.textContent = 'System Offline';
+            isCallActive = false;
+            updateCallButtons();
+            showNotification('Disconnected from server', 'error');
+        });
+
+        socket.on('call_started', (data) => {
+            currentSessionId = data.session_id;
+            isCallActive = true;
+            updateCallButtons();
+            connectionDot.className = 'status-dot calling';
+            connectionStatus.textContent = 'Call Active';
+            systemStatus.textContent = 'Emergency Call in Progress';
+            conversationMessages.classList.add('active');
+            showNotification('Emergency call started', 'success');
+        });
+
+        socket.on('call_ended', (data) => {
+            isCallActive = false;
+            currentSessionId = null;
+            updateCallButtons();
+            connectionDot.className = 'status-dot connected';
+            connectionStatus.textContent = 'Connected';
+            systemStatus.textContent = 'System Ready';
+            stopWaveAnimation();
+            showNotification('Call ended', 'success');
+        });
+
+        socket.on('conversation_update', (data) => {
+            addConversationMessage(data.role, data.content);
+            
+            if (data.role === 'assistant') {
+                startWaveAnimation();
+                avatar.classList.add('speaking');
+                setTimeout(() => {
+                    stopWaveAnimation();
+                    avatar.classList.remove('speaking');
+                }, 3000);
+            }
+        });
+
+        socket.on('voice_activity', (data) => {
+            if (data.is_speaking) {
+                if (data.speaker === 'user') {
+                    // User is speaking
+                    avatar.classList.remove('speaking');
+                    stopWaveAnimation();
+                } else {
+                    // AI is speaking
+                    avatar.classList.add('speaking');
+                    startWaveAnimation();
+                }
+            } else {
+                avatar.classList.remove('speaking');
+                stopWaveAnimation();
+            }
+        });
+
+        socket.on('function_call', (data) => {
+            addFunctionCall(data);
+        });
+
+        socket.on('new_incident', (data) => {
+            addIncident(data.ticket);
+            showNotification(`New incident: ${data.ticket.incident_type}`, 'error');
+        });
+
+        socket.on('audio_output', (data) => {
+            // Handle audio output from Deepgram
+            playAudio(data.audio_data, data.sample_rate);
+        });
+
+        // UI functions
+        function updateCallButtons() {
+            if (isCallActive) {
+                startCallBtn.style.display = 'none';
+                stopCallBtn.style.display = 'block';
+                testIncidentBtn.disabled = true;
+            } else {
+                startCallBtn.style.display = 'block';
+                stopCallBtn.style.display = 'none';
+                testIncidentBtn.disabled = false;
+            }
+        }
+
+        function startWaveAnimation() {
+            waveContainer.classList.add('active-wave');
+        }
+
+        function stopWaveAnimation() {
+            waveContainer.classList.remove('active-wave');
+        }
+
+        function addConversationMessage(role, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const roleSpan = document.createElement('div');
+            roleSpan.className = 'message-role';
+            roleSpan.textContent = role === 'user' ? 'Emergency Responder' : 'Sarah';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(roleSpan);
+            messageDiv.appendChild(contentDiv);
+            messagesList.appendChild(messageDiv);
+            
+            // Auto-scroll to bottom
+            conversationMessages.scrollTop = conversationMessages.scrollHeight;
+        }
+
+        function addIncident(incident) {
+            const incidentDiv = document.createElement('div');
+            incidentDiv.className = 'incident-card';
+            
+            incidentDiv.innerHTML = `
+                <div class="incident-header">
+                    <div class="incident-type">${incident.incident_type}</div>
+                    <div class="priority">Priority ${incident.priority}</div>
+                </div>
+                <div class="incident-details">
+                    <div class="incident-address">📍 ${incident.address}</div>
+                    <div>🎯 Confidence: <span class="confidence">${Math.round(incident.confidence_score * 100)}%</span></div>
+                    <div>📞 ${incident.phone_number}</div>
+                </div>
+                <div class="incident-actions">
+                    <button class="btn" style="font-size: 12px; padding: 6px 12px;" 
+                            onclick="makeCallForIncident('${incident.ticket_id}')">
+                        📞 Make Call
+                    </button>
+                </div>
+            `;
+            
+            // Replace "No active incidents" if it exists
+            const noIncidents = incidentsContainer.querySelector('.no-incidents');
+            if (noIncidents) {
+                noIncidents.remove();
+            }
+            
+            incidentsContainer.insertBefore(incidentDiv, incidentsContainer.firstChild);
+        }
+
+        function addFunctionCall(data) {
+            const callDiv = document.createElement('div');
+            callDiv.className = 'function-call';
+            callDiv.innerHTML = `
+                <strong>${data.function_name}</strong><br>
+                <small>${JSON.stringify(data.result)}</small>
+            `;
+            functionCallsList.appendChild(callDiv);
+            functionCalls.classList.add('active');
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            notifications.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        function makeCallForIncident(ticketId) {
+            // Create sample incident data for demo
+            const sampleIncident = {
+                ticket_id: ticketId,
+                incident_type: "Vehicle Theft",
+                address: "123 Main Street, Downtown",
+                phone_number: "+1234567890",
+                priority: 5,
+                confidence_score: 0.95,
+                image_urls: ["https://example.com/evidence1.jpg"],
+                status: 2
+            };
+            
+            startCall(sampleIncident);
+        }
+
+        async function startCall(ticketData = null) {
+            if (isCallActive) return;
+            
+            try {
+                // Request microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { deviceId: inputDevice.value } 
+                });
+                
+                // Setup media recorder for sending audio to server
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && isCallActive) {
+                        // Convert to base64 and send to server
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64Audio = reader.result.split(',')[1];
+                            socket.emit('send_audio', {
+                                session_id: currentSessionId,
+                                audio_data: base64Audio
+                            });
+                        };
+                        reader.readAsDataURL(event.data);
+                    }
+                };
+                
+                mediaRecorder.start(100); // Send audio chunks every 100ms
+                
+                // Start call
+                socket.emit('start_call', {
+                    ticket_data: ticketData || {
+                        ticket_id: "DEMO-" + Date.now(),
+                        incident_type: "Test Emergency",
+                        address: "Demo Location",
+                        phone_number: "+1234567890",
+                        priority: 5,
+                        confidence_score: 0.9,
+                        image_urls: []
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error starting call:', error);
+                showNotification('Failed to start call: ' + error.message, 'error');
+            }
+        }
+
+        function stopCall() {
+            if (!isCallActive) return;
+            
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            
+            socket.emit('stop_call', { session_id: currentSessionId });
+        }
+
+        function playAudio(base64Audio, sampleRate) {
+            // Simple audio playback (you might want to implement proper audio playback)
+            try {
+                const audioData = atob(base64Audio);
+                const arrayBuffer = new ArrayBuffer(audioData.length);
+                const view = new Uint8Array(arrayBuffer);
+                for (let i = 0; i < audioData.length; i++) {
+                    view[i] = audioData.charCodeAt(i);
+                }
+                
+                if (audioContext) {
+                    audioContext.decodeAudioData(arrayBuffer).then(buffer => {
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.start();
+                    }).catch(err => {
+                        console.error('Error playing audio:', err);
+                    });
+                }
+            } catch (error) {
+                console.error('Error processing audio:', error);
+            }
+        }
+
+        // Event listeners
+        startCallBtn.addEventListener('click', () => startCall());
+        stopCallBtn.addEventListener('click', stopCall);
+
+        testIncidentBtn.addEventListener('click', () => {
+            const testIncident = {
+                ticket_id: "TEST-" + Date.now(),
+                incident_type: "Suspicious Activity",
+                address: "456 Demo Street, Test City",
+                phone_number: "+1234567890",
+                priority: 4,
+                confidence_score: 0.85,
+                image_urls: ["https://example.com/test.jpg"]
+            };
+            
+            addIncident(testIncident);
+            showNotification('Test incident created', 'success');
+        });
+
+        clearConversationBtn.addEventListener('click', () => {
+            messagesList.innerHTML = '';
+            conversationMessages.classList.remove('active');
+            functionCallsList.innerHTML = '';
+            functionCalls.classList.remove('active');
+            showNotification('Conversation cleared', 'success');
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupAudio();
+            updateCallButtons();
+        });
+    </script>
+</body>
+</html>
